@@ -16,19 +16,22 @@
 #include "../common.h"
 #include "control.h"
 
-const char *opts = "hp:";
+const char *opts = "hp:t:";
 const struct option long_opts[] = {
 	{ .name = "help",				.val = 'h' },
 	{ .name = "port",		.has_arg = 1,	.val = 'p' },
+	{ .name = "protocol",	.has_arg = 1,	.val = 't' },
 	{}
 };
 
 struct server_config {
 	uint16_t	port;
+	uint16_t	protocol;
 };
 
 static struct server_config server_config = {
 	.port		= DEFAULT_PORT,
+	.protocol	= IPPROTO_TCP,
 };
 
 static const char *help_text = "\n"
@@ -49,6 +52,7 @@ static const char *help_text = "\n"
 "      Display this help text.\n"
 "  -p,--port <port>\n"
 "      Server port to listen on (default 12543).\n"
+"  -t,--protocol <tcp|udp>\n"
 "\n";
 
 static int parse_cmdline(int argc, char *argv[], struct server_config *config)
@@ -59,23 +63,34 @@ static int parse_cmdline(int argc, char *argv[], struct server_config *config)
 
 	while ((c = getopt_long(argc, argv, opts, long_opts, NULL)) != -1) {
 		switch(c) {
-                case 'h':
-                        fputs(help_text, stdout);
-                        exit(0);
-		case 'p':
-			ret = parse_ulong_range("port", optarg, &val,
-						0, USHRT_MAX);
-			if (ret < 0)
+            case 'h':
+                fputs(help_text, stdout);
+                exit(0);
+			case 't':
+				if (strcmp(optarg, "tcp") == 0) {
+					config->protocol = IPPROTO_TCP;
+					break;
+				}
+				if (strcmp(optarg, "udp") == 0) {
+					config->protocol = IPPROTO_UDP;
+					break;
+				}
+				fprintf(stderr, "unknown transport protocol '%s'\n", optarg);
+					return -EINVAL;
+			case 'p':
+				ret = parse_ulong_range("port", optarg, &val,
+							0, USHRT_MAX);
+				if (ret < 0)
+					return -EINVAL;
+				config->port = val;
+				break;
+			case '?':
+				fputs("\nUsage:", stdout);
+				fputs(help_text, stdout);
 				return -EINVAL;
-			config->port = val;
-			break;
-		case '?':
-			fputs("\nUsage:", stdout);
-			fputs(help_text, stdout);
-			return -EINVAL;
-		default:
-			fprintf(stderr, "unknown option '-%c'\n", c);
-			return -EINVAL;
+			default:
+				fprintf(stderr, "unknown option '-%c'\n", c);
+				return -EINVAL;
 		}
 	}
 
@@ -107,7 +122,7 @@ static int setup_ctrl(const struct server_config *config)
 	int ret;
 	int sd;
 
-	sd = socket(PF_INET6, SOCK_STREAM, IPPROTO_TCP);
+	sd = socket(PF_INET6, config->protocol == IPPROTO_TCP ? SOCK_STREAM : SOCK_DGRAM, config->protocol);
 	if (sd < 0) {
 		ret = -errno;
 		perror("socket");
@@ -185,6 +200,8 @@ int main(int argc, char *argv[])
 		return 1;
 
 	printf("port: %hu\n", server_config.port);
+	printf("protocol: %s\n", server_config.protocol == IPPROTO_TCP ?
+				"tcp" : "udp");
 
 	ret = server_init();
 	if (ret < 0)
