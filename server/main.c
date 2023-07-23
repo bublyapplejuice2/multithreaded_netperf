@@ -150,11 +150,13 @@ static int setup_ctrl(const struct server_config *config)
 		perror("bind");
 		return ret;
 	}
-	ret = listen(sd, 16);
-	if (ret < 0) {
-		ret = -errno;
-		perror("listen");
-		return ret;
+	if (config->protocol == IPPROTO_TCP) {
+		ret = listen(sd, 16);
+		if (ret < 0) {
+			ret = -errno;
+			perror("listen");
+			return ret;
+		}
 	}
 
 	return sd;
